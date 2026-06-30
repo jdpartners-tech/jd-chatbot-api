@@ -1,5 +1,5 @@
 import express from 'express';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import cors from 'cors';
 
 const app = express();
@@ -20,7 +20,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 const SYSTEM_PROMPT = `You are a helpful AI assistant on the JD Partners website.
 JD Partners is a Hong Kong-based private investment firm focused on private credit,
@@ -40,25 +40,26 @@ app.post('/chat', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    const messages = [
-      ...history.slice(-10),
-      { role: 'user', content: message.trim() },
-    ];
-
-    const stream = client.messages.stream({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages,
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      systemInstruction: SYSTEM_PROMPT,
     });
 
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`);
-      }
+    // Convert history to Gemini format
+    const geminiHistory = history.slice(-10).map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }],
+    }));
+
+    const chat = model.startChat({ history: geminiHistory });
+    const result = await chat.sendMessageStream(message.trim());
+
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) res.write(`data: ${JSON.stringify({ text })}\n\n`);
     }
   } catch (err) {
-    console.error('Anthropic error:', err.message);
+    console.error('Gemini error:', err.message);
     res.write(`data: ${JSON.stringify({ error: 'Something went wrong. Please try again.' })}\n\n`);
   }
 
