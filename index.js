@@ -60,7 +60,12 @@ app.post('/chat', async (req, res) => {
     }
   } catch (err) {
     console.error('Gemini error:', err.message);
-    res.write(`data: ${JSON.stringify({ error: 'Something went wrong. Please try again.' })}\n\n`);
+    const userMsg = err.message?.includes('quota') || err.message?.includes('429')
+      ? 'Gemini API quota exceeded. Please try again later.'
+      : err.message?.includes('safety') || err.message?.includes('block')
+        ? 'Gemini declined to answer this question.'
+        : `Gemini error: ${err.message}`;
+    res.write(`data: ${JSON.stringify({ error: userMsg })}\n\n`);
   }
 
   res.write('data: [DONE]\n\n');
